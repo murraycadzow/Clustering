@@ -1,0 +1,57 @@
+---
+title: "Tajima's D Clustering"
+author: "Murray Cadzow"
+date: "`r format(Sys.Date())`"
+output: html_document
+---
+
+```{r, echo = FALSE, warning= FALSE}
+library(RMySQL)
+pw <- read.table("~/pw.txt", header=FALSE, stringsAsFactors = FALSE, comment.char = "")
+drv = dbDriver("MySQL")
+db = dbConnect(drv, user="murraycadzow", host="biocvisg0.otago.ac.nz", dbname="selection_phase3", password = as.character(pw))
+
+par(mfrow=c(1,1))
+pops <- dbGetQuery(db, "select * from population")
+pop_1kg <- pops[1:26,]
+
+pops_id = c(1:26, 28, 30)
+
+TD = list()
+for(POP in pops_id){
+  TD[[pops[which(POP == pops$id), "code"]]] = dbGetQuery(db, paste0("select * from tajd where pop = '",POP,"' and tajimasd < 0 order by tajimasd limit 1000;"))
+  }
+
+combine=function(pop1,pop2){
+    tmp = merge(pop1, pop2, by = c("chrom", "chrom_start"), all=TRUE)
+    names(tmp)[names(tmp) == "tajimasd.x"] = paste0(pops[which(na.omit(tmp$pop.x) == pops$id), "code"] ,"_td")
+    names(tmp)[names(tmp) == "tajimasd.y"] = paste0(pops[which(na.omit(tmp$pop.y) == pops$id), "code"] ,"_td")
+    tmp =tmp[,!names(tmp) %in% c("chrom_end.x", "num_snps.x", "chrom_end.y", "num_snps.y", "pop.x","pop.y")]
+    return(tmp)
+  }
+
+m = combine(TD[[names(TD)[1]] ],TD[[names(TD)[2] ]])
+for(POP in names(TD)[3:length(names(TD))]){
+    m = combine(m, TD[[POP]])
+    #print(POP)
+  }
+
+for(POP in names(TD)){
+    m[,paste0(POP,"_td")] <- ifelse(is.na(m[,paste0(POP,"_td")]),0,1)
+    }
+
+m <- m[,-grep(pattern = "window", names(m))]
+```
+
+```{r}
+plot(hclust(dist(t(m[,3:length(m)]), method="euclidean"), method = "single"), main = "Tajima D Clustering")
+```
+
+
+```{r}
+heatmap(as.matrix(m[,3:length(m)]), distfun = function(y) dist(y, method="euclidean"))
+```
+
+```{r}
+heatmap(as.matrix(m[,3:length(m)]), distfun = function(y) dist(y, method="canberra"))
+```
