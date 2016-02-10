@@ -1,209 +1,145 @@
 ---
-title: "Clustering Pac with 1kgp"
+title: "Clustering"
 author: "Murray Cadzow"
 date: "6 August 2015"
 output: html_document
 ---
 
 
-```{r TD, echo=FALSE}
+```{r TD, echo=FALSE, warning=FALSE}
 library("RMySQL")
-library("VennDiagram")
-
+par(mfrow=c(1,1))
+pops = c("ACB", "ASW", "AXIOM","BEB", "CDX","CEU","CHB","CHS", "CLM", "ESN", "FIN","GBR", "GIH", "GWD", "IBS", "ITU", "JPT", "KHV", "LWK", "MSL", "MXL","OMNI", "PEL", "PJL", "PUR", "STU", "TSI","YRI")
 drv=dbDriver(drvName = "MySQL")
 db=dbConnect(drv, host="127.0.0.1", user="murray", db="selection")
-axiomTD= dbGetQuery(db, "select * from tajimasd where Population = 'AXIOM' and TajimasD < 0 order by TajimasD limit 1000;")
-omniTD=dbGetQuery(db, "select * from tajimasd where Population = 'OMNI' and TajimasD < 0 order by TajimasD limit 1000;")
-ceuTD=dbGetQuery(db, "select * from tajimasd where Population = 'CEU' and TajimasD < 0 order by TajimasD limit 1000;")
-chbTD=dbGetQuery(db, "select * from tajimasd where Population = 'CHB' and TajimasD < 0 order by TajimasD limit 1000;")
-chsTD=dbGetQuery(db, "select * from tajimasd where Population = 'CHS' and TajimasD < 0 order by TajimasD limit 1000;")
-gbrTD=dbGetQuery(db, "select * from tajimasd where Population = 'GBR' and TajimasD < 0 order by TajimasD limit 1000;")
-yriTD=dbGetQuery(db, "select * from tajimasd where Population = 'YRI' and TajimasD < 0 order by TajimasD limit 1000;")
 
-overlap = function(pop1, pop2){
-  return(length(merge(pop1, pop2, by = c("chrom", "chrom_start"))[,1]))
+TD = list()
+for(POP in pops){
+  TD[[POP]] = dbGetQuery(db, paste0("select * from tajimasd where Population = '",POP,"' and TajimasD < 0 order by TajimasD limit 1000;"))
 }
 
-axiom_omniTD = overlap(axiomTD,omniTD)
-axiom_ceuTD = overlap(axiomTD,ceuTD)
-axiom_chbTD =overlap(axiomTD,chbTD)
-axiom_chsTD = overlap(axiomTD,chsTD)
-axiom_gbrTD = overlap(axiomTD,gbrTD)
-axiom_yriTD = overlap(axiomTD,yriTD)
+combine=function(pop1,pop2){
+  tmp = merge(pop1, pop2, by = c("chrom", "chrom_start"), all=TRUE)
+  names(tmp)[names(tmp) == "TajimasD.x"] = paste0(levels(factor(tmp$Population.x))[1],"_td")
+  names(tmp)[names(tmp) == "TajimasD.y"] = paste0(levels(factor(tmp$Population.y))[1],"_td")                               
+  #names(tmp)[names(tmp) == "Population.x"] = paste0("Pop_",levels(factor(tmp$Population.x))[1])
+  #names(tmp)[names(tmp) == "Population.y"] = paste0("Pop_",levels(factor(tmp$Population.y))[1])
+  tmp =tmp[,!names(tmp) %in% c("chrom_end.x", "num_snps.x", "chrom_end.y", "num_snps.y", "Population.x","Population.y")]
+return(tmp)
+}
 
-omni_ceuTD = overlap(omniTD,ceuTD)
-omni_chbTD = overlap(omniTD,chbTD)
-omni_chsTD = overlap(omniTD,chsTD)
-omni_gbrTD = overlap(omniTD,gbrTD)
-omni_yriTD = overlap(omniTD,yriTD)
+m = combine(TD[[1]],TD[[2]])
+for(POP in pops[3:length(pops)]){
+  m = combine(m, TD[[POP]])
+  #print(POP)
+}
+for(POP in pops){
+  m[,paste0(POP,"_td")] <- ifelse(is.na(m[,paste0(POP,"_td")]),0,1)
+}
 
-ceu_chbTD = overlap(ceuTD,chbTD)
-ceu_chsTD = overlap(ceuTD,chsTD)
-ceu_gbrTD = overlap(ceuTD,gbrTD)
-ceu_yriTD = overlap(ceuTD,yriTD)
+plot(hclust(dist(t(m[,3:length(m)]), method="euclidean"), method = "single"), main = "Tajima D Clustering")
+```
 
-chb_chsTD = overlap(chbTD, chsTD)
-chb_gbrTD = overlap(chbTD, gbrTD)
-chb_yriTD = overlap(chbTD, yriTD)
+```{r, echo=FALSE}
+plot(hclust(dist(t(m[,3:length(m)]), method="canberra"), method = "single"), main = "Tajima D Clustering")
+```
 
-chs_gbrTD = overlap(chsTD, gbrTD)
-chs_yriTD = overlap(chsTD, yriTD)
+```{r, echo=FALSE}
+heatmap(as.matrix(m[,3:length(m)]), distfun = function(y) dist(y, method="euclidean"))
 
-gbr_yriTD = overlap(gbrTD,yriTD)
+```
 
-# make distance matrix
-distTD = matrix(nrow = 7, ncol=7)
-colnames(distTD) = c('axiom','omni','ceu','chb','chs','gbr','yri')
-rownames(distTD) = c('axiom','omni','ceu','chb','chs','gbr','yri')
-distTD[,1]= c(0,axiom_omniTD,axiom_ceuTD,axiom_chbTD,axiom_chsTD,axiom_gbrTD,axiom_yriTD)
-distTD[,2]= c(axiom_omniTD,0,omni_ceuTD,omni_chbTD,omni_chsTD,omni_gbrTD,omni_yriTD)
-distTD[,3]= c(axiom_ceuTD,omni_ceuTD,0,ceu_chbTD,ceu_chsTD,ceu_gbrTD,ceu_yriTD)
-distTD[,4]= c(axiom_ceuTD,omni_ceuTD,ceu_chbTD,0,chb_chsTD,chb_gbrTD,chb_yriTD)
-distTD[,5]= c(axiom_ceuTD,omni_ceuTD,ceu_chbTD,chb_chsTD,0,chs_gbrTD,chs_yriTD)
-distTD[,6]= c(axiom_ceuTD,omni_ceuTD,ceu_chbTD,chb_chsTD,chs_gbrTD,0,gbr_yriTD)
-distTD[1,]=t(distTD[,1])
-distTD[2,]=t(distTD[,2])
-distTD[3,]=t(distTD[,3])
-distTD[4,]=t(distTD[,4])
-distTD[5,]=t(distTD[,5])
-distTD[6,]=t(distTD[,6])
-distTD[7,7] = 0
-dist2TD = 1/distTD
-dist2TD[1,1]=0;dist2TD[2,2]=0;dist2TD[3,3]=0;dist2TD[4,4]=0;dist2TD[5,5]=0;dist2TD[6,6]=0;dist2TD[7,7]=0
-plot(hclust(dist(dist2TD)), main= "Tajima's D Cluster Dendrogram")
-distTD
+```{r, echo=FALSE}
+heatmap(as.matrix(m[,3:length(m)]), distfun = function(y) dist(y, method="canberra"))
 
-#intersection of axiom and omni TAJIMAs D
-grid.newpage()
-draw.pairwise.venn(length(axiomTD[,1]),length(omniTD[,1]),length(merge(axiomTD, omniTD, by = c("chrom", "chrom_start"))[,1]), c("NZ Maori", "Samoan"), col = c("red","blue"), fill = c("red","blue"))
 ```
 
 
 
-```{r FAW, echo=FALSE}
-axiomFAW = dbGetQuery(db, "select * from FayWuH where Population = 'AXIOM' and FayWu_H < 0 order by FayWu_H limit 1000;")
-omniFAW = dbGetQuery(db, "select * from FayWuH where Population = 'OMNI' and FayWu_H < 0 order by FayWu_H limit 1000;")
-ceuFAW = dbGetQuery(db, "select * from FayWuH where Population = 'CEU' and FayWu_H < 0 order by FayWu_H limit 1000;")
-chbFAW = dbGetQuery(db, "select * from FayWuH where Population = 'CHB' and FayWu_H < 0 order by FayWu_H limit 1000;")
-chsFAW = dbGetQuery(db, "select * from FayWuH where Population = 'CHS' and FayWu_H < 0 order by FayWu_H limit 1000;")
-gbrFAW = dbGetQuery(db, "select * from FayWuH where Population = 'GBR' and FayWu_H < 0 order by FayWu_H limit 1000;")
-yriFAW = dbGetQuery(db, "select * from FayWuH where Population = 'YRI' and FayWu_H < 0 order by FayWu_H limit 1000;")
+```{r FAW, echo=FALSE, warning=FALSE}
+axiomFAW = dbGetQuery(db, "select chrom, chrom_start, chrom_end, FayWu_H, Population from FayWuH where Population = 'AXIOM' and FayWu_H < 0 order by FayWu_H limit 1000;")
+omniFAW = dbGetQuery(db, "select chrom, chrom_start, chrom_end, FayWu_H, Population from FayWuH where Population = 'OMNI' and FayWu_H < 0 order by FayWu_H limit 1000;")
+ceuFAW = dbGetQuery(db, "select chrom, chrom_start, chrom_end, FayWu_H, Population from FayWuH where Population = 'CEU' and FayWu_H < 0 order by FayWu_H limit 1000;")
+chbFAW = dbGetQuery(db, "select chrom, chrom_start, chrom_end, FayWu_H, Population from FayWuH where Population = 'CHB' and FayWu_H < 0 order by FayWu_H limit 1000;")
+chsFAW = dbGetQuery(db, "select chrom, chrom_start, chrom_end, FayWu_H, Population from FayWuH where Population = 'CHS' and FayWu_H < 0 order by FayWu_H limit 1000;")
+gbrFAW = dbGetQuery(db, "select chrom, chrom_start, chrom_end, FayWu_H, Population from FayWuH where Population = 'GBR' and FayWu_H < 0 order by FayWu_H limit 1000;")
+yriFAW = dbGetQuery(db, "select chrom, chrom_start, chrom_end, FayWu_H, Population from FayWuH where Population = 'YRI' and FayWu_H < 0 order by FayWu_H limit 1000;")
 
-axiom_omniFAW = overlap(axiomFAW,omniFAW)
-axiom_ceuFAW = overlap(axiomFAW,ceuFAW)
-axiom_chbFAW =overlap(axiomFAW,chbFAW)
-axiom_chsFAW = overlap(axiomFAW,chsFAW)
-axiom_gbrFAW = overlap(axiomFAW,gbrFAW)
-axiom_yriFAW = overlap(axiomFAW,yriFAW)
+FAW = list()
+for(POP in pops){
+  FAW[[POP]] = dbGetQuery(db, paste0("select chrom, chrom_start, chrom_end, FayWu_H, Population from FayWuH where Population = '",POP,"' and FayWu_H < 0 order by FayWu_H limit 1000;"))
+}
 
-omni_ceuFAW = overlap(omniFAW,ceuFAW)
-omni_chbFAW = overlap(omniFAW,chbFAW)
-omni_chsFAW = overlap(omniFAW,chsFAW)
-omni_gbrFAW = overlap(omniFAW,gbrFAW)
-omni_yriFAW = overlap(omniFAW,yriFAW)
+combine=function(pop1,pop2){
+  tmp = merge(pop1, pop2, by = c("chrom", "chrom_start"), all=TRUE)
+  names(tmp)[names(tmp) == "FayWu_H.x"] = paste0(levels(factor(tmp$Population.x))[1],"_faw")
+  names(tmp)[names(tmp) == "FayWu_H.y"] = paste0(levels(factor(tmp$Population.y))[1],"_faw")                               
+  #names(tmp)[names(tmp) == "Population.x"] = paste0("Pop_",levels(factor(tmp$Population.x))[1])
+  #names(tmp)[names(tmp) == "Population.y"] = paste0("Pop_",levels(factor(tmp$Population.y))[1])
+  tmp =tmp[,!names(tmp) %in% c("chrom_end.x", "chrom_end.y", "Population.x","Population.y")]
+return(tmp)
+}
 
-ceu_chbFAW = overlap(ceuFAW,chbFAW)
-ceu_chsFAW = overlap(ceuFAW,chsFAW)
-ceu_gbrFAW = overlap(ceuFAW,gbrFAW)
-ceu_yriFAW = overlap(ceuFAW,yriFAW)
+m = combine(FAW[[1]],FAW[[2]])
+for(POP in pops[3:length(pops)]){
+  m = combine(m, FAW[[POP]])
+  #print(POP)
+}
+for(POP in pops){
+  m[,paste0(POP,"_faw")] <- ifelse(is.na(m[,paste0(POP,"_faw")]),0,1)
+}
 
-chb_chsFAW = overlap(chbFAW, chsFAW)
-chb_gbrFAW = overlap(chbFAW, gbrFAW)
-chb_yriFAW = overlap(chbFAW, yriFAW)
 
-chs_gbrFAW = overlap(chsFAW, gbrFAW)
-chs_yriFAW = overlap(chsFAW, yriFAW)
-
-gbr_yriFAW = overlap(gbrFAW,yriFAW)
-
-# make distance matrix
-distFAW = matrix(nrow = 7, ncol=7)
-colnames(distFAW) = c('axiom','omni','ceu','chb','chs','gbr','yri')
-rownames(distFAW) = c('axiom','omni','ceu','chb','chs','gbr','yri')
-distFAW[,1]= c(0,axiom_omniFAW,axiom_ceuFAW,axiom_chbFAW,axiom_chsFAW,axiom_gbrFAW,axiom_yriFAW)
-distFAW[,2]= c(axiom_omniFAW,0,omni_ceuFAW,omni_chbFAW,omni_chsFAW,omni_gbrFAW,omni_yriFAW)
-distFAW[,3]= c(axiom_ceuFAW,omni_ceuFAW,0,ceu_chbFAW,ceu_chsFAW,ceu_gbrFAW,ceu_yriFAW)
-distFAW[,4]= c(axiom_ceuFAW,omni_ceuFAW,ceu_chbFAW,0,chb_chsFAW,chb_gbrFAW,chb_yriFAW)
-distFAW[,5]= c(axiom_ceuFAW,omni_ceuFAW,ceu_chbFAW,chb_chsFAW,0,chs_gbrFAW,chs_yriFAW)
-distFAW[,6]= c(axiom_ceuFAW,omni_ceuFAW,ceu_chbFAW,chb_chsFAW,chs_gbrFAW,0,gbr_yriFAW)
-distFAW[1,]=t(distFAW[,1])
-distFAW[2,]=t(distFAW[,2])
-distFAW[3,]=t(distFAW[,3])
-distFAW[4,]=t(distFAW[,4])
-distFAW[5,]=t(distFAW[,5])
-distFAW[6,]=t(distFAW[,6])
-distFAW[7,7] = 0
-dist2FAW = 1/distFAW
-dist2FAW[1,1]=0;dist2FAW[2,2]=0;dist2FAW[3,3]=0;dist2FAW[4,4]=0;dist2FAW[5,5]=0;dist2FAW[6,6]=0;dist2FAW[7,7]=0
-plot(hclust(dist(dist2FAW)), main="Fay and Wu's H Cluster Dendrogram")
-distFAW
-
-#intersection of axiom and omni FAW
-grid.newpage()
-draw.pairwise.venn(length(axiomFAW[,1]),length(omniFAW[,1]),length(merge(axiomFAW, omniFAW, by = c("chrom", "chrom_start"))[,1]), c("NZ Maori", "Samoan"), col = c("red","blue"), fill = c("red","blue"))
+plot(hclust(dist(t(m[,3:length(m)]), method="euclidean"), method = "single"), main = "Fay and Wu's H Clustering")
 ```
 
+```{r, echo=FALSE}
+plot(hclust(dist(t(m[,3:length(m)]), method="canberra"), method = "single"), main = "Fay and Wu's H Clustering")
+```
 
-```{r iHS,echo =FALSE}
+```{r, echo=FALSE}
+heatmap(as.matrix(m[,3:length(m)]), scale = NULL)
+```
+
+```{r, echo=FALSE}
+heatmap(as.matrix(m[,3:length(m)]), distfun = function(y) dist(y, method="canberra"))
+
+```
+
+```{r iHS,echo =FALSE, warning=FALSE}
 # iHS
-axiom_ihs = dbGetQuery(db, "select * from axiom_ihs where ihs_rank <= 1000;")
-omni_ihs = dbGetQuery(db, "select * from omni_ihs where ihs_rank <= 1000;")
-ceu_ihs = dbGetQuery(db, "select * from ceu_ihs where ihs_rank <= 1000;")
-chb_ihs = dbGetQuery(db, "select * from chb_ihs where ihs_rank <= 1000;")
-chs_ihs = dbGetQuery(db, "select * from chs_ihs where ihs_rank <= 1000;")
-gbr_ihs = dbGetQuery(db, "select * from gbr_ihs where ihs_rank <= 1000;")
-yri_ihs = dbGetQuery(db, "select * from yri_ihs where ihs_rank <= 1000;")
+axiom_ihs = dbGetQuery(db, "select chrom, chrom_start, chrom_end, ihs_rank, Population from axiom_ihs where ihs_rank <= 1000;")
+omni_ihs = dbGetQuery(db, "select chrom, chrom_start, chrom_end, ihs_rank, Population from omni_ihs where ihs_rank <= 1000;")
+ceu_ihs = dbGetQuery(db, "select chrom, chrom_start, chrom_end, ihs_rank, Population from ceu_ihs where ihs_rank <= 1000;")
+chb_ihs = dbGetQuery(db, "select chrom, chrom_start, chrom_end, ihs_rank, Population from chb_ihs where ihs_rank <= 1000;")
+chs_ihs = dbGetQuery(db, "select chrom, chrom_start, chrom_end, ihs_rank, Population from chs_ihs where ihs_rank <= 1000;")
+gbr_ihs = dbGetQuery(db, "select chrom, chrom_start, chrom_end, ihs_rank, Population from gbr_ihs where ihs_rank <= 1000;")
+yri_ihs = dbGetQuery(db, "select chrom, chrom_start, chrom_end, ihs_rank, Population from yri_ihs where ihs_rank <= 1000;")
 
-axiom_omni_ihs = overlap(axiom_ihs,omni_ihs)
-axiom_ceu_ihs = overlap(axiom_ihs,ceu_ihs)
-axiom_chb_ihs =overlap(axiom_ihs,chb_ihs)
-axiom_chs_ihs = overlap(axiom_ihs,chs_ihs)
-axiom_gbr_ihs = overlap(axiom_ihs,gbr_ihs)
-axiom_yri_ihs = overlap(axiom_ihs,yri_ihs)
+combine=function(pop1,pop2){
+return(merge(pop1, pop2, by = c("chrom", "chrom_start"), all=TRUE))
+}
 
-omni_ceu_ihs = overlap(omni_ihs,ceu_ihs)
-omni_chb_ihs = overlap(omni_ihs,chb_ihs)
-omni_chs_ihs = overlap(omni_ihs,chs_ihs)
-omni_gbr_ihs = overlap(omni_ihs,gbr_ihs)
-omni_yri_ihs = overlap(omni_ihs,yri_ihs)
+ax_om = combine(axiom_ihs, omni_ihs)
+ax_om_ce = combine(ax_om, ceu_ihs)
+ax_om_ce_cb = combine(ax_om_ce, chb_ihs)
+ax_om_ce_cb_cs = combine(ax_om_ce_cb, chs_ihs)
+ax_om_ce_cb_cs_gb = combine(ax_om_ce_cb_cs, gbr_ihs)
+ax_om_ce_cb_cs_gb_yr = combine(ax_om_ce_cb_cs_gb, yri_ihs)
 
-ceu_chb_ihs = overlap(ceu_ihs,chb_ihs)
-ceu_chs_ihs = overlap(ceu_ihs,chs_ihs)
-ceu_gbr_ihs = overlap(ceu_ihs,gbr_ihs)
-ceu_yri_ihs = overlap(ceu_ihs,yri_ihs)
+d= matrix(nrow=nrow(ax_om_ce_cb_cs_gb_yr), ncol=7)
+d[,1]=ifelse(is.na(ax_om_ce_cb_cs_gb_yr[,4]),0,1)
+d[,2]=ifelse(is.na(ax_om_ce_cb_cs_gb_yr[,7]),0,1)
+d[,3]=ifelse(is.na(ax_om_ce_cb_cs_gb_yr[,10]),0,1)
+d[,4]=ifelse(is.na(ax_om_ce_cb_cs_gb_yr[,13]),0,1)
+d[,5]=ifelse(is.na(ax_om_ce_cb_cs_gb_yr[,16]),0,1)
+d[,6]=ifelse(is.na(ax_om_ce_cb_cs_gb_yr[,19]),0,1)
+d[,7]=ifelse(is.na(ax_om_ce_cb_cs_gb_yr[,22]),0,1)
+colnames(d)=c("NZM","SAM","CEU","CHB","CHS","GBR","YRI")
+plot(hclust(dist(t(d), method="euclidean"), method = "single"), main= "iHS Clutering")
+```
 
-chb_chs_ihs = overlap(chb_ihs, chs_ihs)
-chb_gbr_ihs = overlap(chb_ihs, gbr_ihs)
-chb_yri_ihs = overlap(chb_ihs, yri_ihs)
 
-chs_gbr_ihs = overlap(chs_ihs, gbr_ihs)
-chs_yri_ihs = overlap(chs_ihs, yri_ihs)
-
-gbr_yri_ihs = overlap(gbr_ihs,yri_ihs)
-
-# make distance matrix
-
-dist_ihs = matrix(nrow = 7, ncol=7)
-colnames(dist_ihs) = c('axiom','omni','ceu','chb','chs','gbr','yri')
-rownames(dist_ihs) = c('axiom','omni','ceu','chb','chs','gbr','yri')
-dist_ihs[,1]= c(0,axiom_omni_ihs,axiom_ceu_ihs,axiom_chb_ihs,axiom_chs_ihs,axiom_gbr_ihs,axiom_yri_ihs)
-dist_ihs[,2]= c(axiom_omni_ihs,0,omni_ceu_ihs,omni_chb_ihs,omni_chs_ihs,omni_gbr_ihs,omni_yri_ihs)
-dist_ihs[,3]= c(axiom_ceu_ihs,omni_ceu_ihs,0,ceu_chb_ihs,ceu_chs_ihs,ceu_gbr_ihs,ceu_yri_ihs)
-dist_ihs[,4]= c(axiom_ceu_ihs,omni_ceu_ihs,ceu_chb_ihs,0,chb_chs_ihs,chb_gbr_ihs,chb_yri_ihs)
-dist_ihs[,5]= c(axiom_ceu_ihs,omni_ceu_ihs,ceu_chb_ihs,chb_chs_ihs,0,chs_gbr_ihs,chs_yri_ihs)
-dist_ihs[,6]= c(axiom_ceu_ihs,omni_ceu_ihs,ceu_chb_ihs,chb_chs_ihs,chs_gbr_ihs,0,gbr_yri_ihs)
-dist_ihs[1,]=t(dist_ihs[,1])
-dist_ihs[2,]=t(dist_ihs[,2])
-dist_ihs[3,]=t(dist_ihs[,3])
-dist_ihs[4,]=t(dist_ihs[,4])
-dist_ihs[5,]=t(dist_ihs[,5])
-dist_ihs[6,]=t(dist_ihs[,6])
-dist_ihs[7,7] = 0
-dist2_ihs = 1/dist_ihs
-dist2_ihs[1,1]=0;dist2_ihs[2,2]=0;dist2_ihs[3,3]=0;dist2_ihs[4,4]=0;dist2_ihs[5,5]=0;dist2_ihs[6,6]=0;dist2_ihs[7,7]=0
-plot(hclust(dist(dist2_ihs)), main="iHS Cluster Dendrogram")
-dist_ihs
-grid.newpage()
-draw.pairwise.venn(length(axiom_ihs[,1]),length(omni_ihs[,1]),length(merge(axiom_ihs, omni_ihs, by = c("chrom", "chrom_start"))[,1]), c("NZ Maori", "Samoan"), col = c("red","blue"), fill = c("red","blue"))
-
+```{r, echo=FALSE}
+plot(hclust(dist(t(d), method="canberra"), method = "single"), main= "iHS Clutering")
 ```
